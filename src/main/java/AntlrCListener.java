@@ -2,10 +2,7 @@ import guru.nidi.graphviz.model.MutableGraph;
 import model.*;
 import util.Util;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -17,207 +14,31 @@ import static guru.nidi.graphviz.model.Factory.mutGraph;
 
 public class AntlrCListener extends CBaseListener {
     private MutableGraph graph;
-    private final List<Node> graphNodes = new ArrayList<>();
-    private Integer nodesCounter = 1;
-
-    private Map<String,Set<Integer>> currentVersions;
-    private Map<String,Set<Integer>> prevVersions;
-    private final Versions versionsClass = new Versions();
-
-    private Node prevNode;
-
-    private final Deque<Node.nodeLabel> labels = new ArrayDeque<>();
-
-    private final Deque<SelectionNode> selectionNodes = new ArrayDeque<>();
-    private final Deque<IterationNode> iterationNodes = new ArrayDeque<>();
-    private final Deque<SwitchNode> switchNodes = new ArrayDeque<>();
-    private final Deque<Breakable> breakableNodes = new ArrayDeque<>();
-
-    private boolean functionDeclarationFlag = false,
-            functionParametersFlag = false,
-            selectionEndFlag = false,
-            iterationFlag = false,
-            iterationCounterFlag = false,
-            iterationStartFlag = false,
-            iterationEndFlag = false,
-            switchStartFlag = false,
-            switchEndFlag = false;
     private final List<Variable> currentExpression = new ArrayList<>();
-    private boolean isDeclarator = false;
+    private GraphInfo graphInfo = new GraphInfo();
 
     public MutableGraph getGraph() {
-        graphNodes.forEach(node -> node.addLinks(graph));
+        graphInfo.getGraphNodes().forEach(node -> node.addLinks(graph));
         return graph;
     }
 
-    private void addLink(final model.Node prevNode, final model.Node node) {
-        model.Node.nodeLabel label;
-        if (prevNode != null) {
-            if (prevNode.isSelectionNode()) {
-                label = labels.removeLast();
-            } else {
-                label = model.Node.nodeLabel.UNDEFINED;
-            }
-            prevNode.addChild(label,node);
-            if (iterationEndFlag) {
-                iterationEndFlag = false;
-                addBreaks(node);
-            }
-        }
-    }
-
-    private void addBreaks(final Node node) {
-        Breakable breakableNode;
-        if (switchEndFlag) {
-            breakableNode = switchNodes.removeLast();
-        } else {
-            breakableNode = iterationNodes.removeLast();
-        }
-        breakableNodes.removeLast();
-        List<Node> breaks = breakableNode.getBreaks();
-        breaks.iterator().forEachRemaining(breakNode -> addLink(breakNode,node));
-    }
-
-    private void addLinkToPrevNode(final Node node) {
-        if (switchEndFlag) {
-            addBreaks(node);
-            switchEndFlag = false;
-        }
-        if (selectionEndFlag) {
-            List<Node> prevs = selectionNodes.getLast().getBranchesEnds();
-
-            for (Node prevNode : prevs) {
-                addLink(prevNode,node);
-            }
-            selectionNodes.removeLast();
-            selectionEndFlag = false;
-        } else {
-            addLink(prevNode,node);
-            prevNode = null;
-        }
-    }
-
-    private Node addNode(final Node.State state, final List<Variable> expression,
-                         Node node) {
-        if (node == null) {
-            node = new Node(nodesCounter, state, expression);
-        } else {
-            node.setParameters(nodesCounter,state,expression);
-        }
-        graphNodes.add(node);
-        nodesCounter++;
-        addLinkToPrevNode(node);
-        prevNode = node;
-        if (iterationStartFlag) {
-            Iterator<IterationNode> iter = iterationNodes.descendingIterator();
-            IterationNode iterationNode;
-            while (iter.hasNext()
-                    && (iterationNode = iter.next()).getIterationNode() == null) {
-                if (iterationNode.isDirect()) {
-                    iterationNode.setIterationNodes(node);
-                } else {
-                    iterationNode.setIterationNodes(node, new Node());
-                }
-            }
-            iterationStartFlag = false;
-        }
-        return node;
-    }
-
-    private void addBoxNodeWithCurExpr() {
-        addNode(Node.State.BASIC,currentExpression,null);
+    public void addBoxNodeWithCurExpr() {
+        graphInfo.addNode(Node.State.BASIC,currentExpression,null);
         currentExpression.clear();
-    }
-
-    private Node addSelectionNode(List<Variable> expression) {
-        final Node node = addNode(Node.State.SELECTION,expression,null);
-        selectionNodes.addLast(new SelectionNode(node,currentVersions));
-        return node;
-    }
-
-    private Variable getDeclaratorVersion(final String variable) {
-        return versionsClass.setVersion(currentVersions,variable);
-    }
-
-    private Variable getVersion(final String variable) {
-        Map<String,Set<Integer>> versionCollection;
-        if (prevVersions != null) {
-            versionCollection = prevVersions;
-        } else {
-            versionCollection = currentVersions;
-        }
-
-        Variable var = versionsClass.getVersion(versionCollection, variable);
-
-        if (var.getType() == Variable.Type.PHI) {
-            List<Variable> phiNode = new ArrayList<>();
-            Variable phiVar = getDeclaratorVersion(var.getLabel());
-            phiNode.add(phiVar);
-            phiNode.add(new Variable("=", Variable.Type.OPERATOR));
-            phiNode.add(var);
-            addNode(Node.State.BASIC,phiNode,null);
-            var = phiVar;
-        }
-
-        if (iterationNodes.size() > 0 && iterationFlag) {
-            IterationNode iterationNode;
-            if (iterationEndFlag) {
-                Iterator<IterationNode> iter = iterationNodes.descendingIterator();
-                iter.next();
-                iterationNode = iter.next();
-            } else {
-                iterationNode = iterationNodes.getLast();
-            }
-            Set<Integer> varGlobalVersions =
-                    iterationNode.getGlobalVersions().get(variable);
-            if (varGlobalVersions != null
-                    && !Collections.disjoint(varGlobalVersions,var.getVersion())) {
-                iterationNode.addToPhiCollection(var);
-            }
-        }
-
-        return var;
-    }
-
-    private void setDeclaratorFlag() {
-        isDeclarator = true;
-        prevVersions = new HashMap<>(currentVersions);
-    }
-
-    private List<Node> getPrevNodes() {
-        List<Node> nodes = new ArrayList<>();
-        if (selectionEndFlag) {
-            SelectionNode selectionNode = selectionNodes.removeLast();
-            nodes.addAll(selectionNode.getBranchesEnds());
-            selectionEndFlag = false;
-        }
-        if (switchEndFlag) {
-            SwitchNode switchNode = switchNodes.removeLast();
-            breakableNodes.removeLast();
-            nodes.addAll(switchNode.getBreaks());
-            switchEndFlag = false;
-        }
-        if (iterationEndFlag) {
-            IterationNode iterationNode = iterationNodes.removeLast();
-            breakableNodes.removeLast();
-            nodes.addAll(iterationNode.getBreaks());
-            iterationEndFlag = false;
-        }
-        return nodes;
     }
 
     public void enterCompilationUnit(CParser.CompilationUnitContext ctx) {
         graph = mutGraph("gr").setDirected(true);
-        currentVersions = new HashMap<>();
+        graphInfo.setCurrentVersions(new HashMap<>());
     }
 
     public void enterFunctionDeclarator(CParser.FunctionDeclaratorContext ctx) {
-        functionDeclarationFlag = true;
+        graphInfo.getFlags().setFunctionDeclarationFlag(true);
     }
 
     public void exitFunctionDeclarator(CParser.FunctionDeclaratorContext ctx) {
-        functionDeclarationFlag = false;
-        functionParametersFlag = false;
+        graphInfo.getFlags().setFunctionDeclarationFlag(false);
+        graphInfo.getFlags().setFunctionParametersFlag(false);
         if (currentExpression.size()>2) {
             currentExpression.remove(currentExpression.size()-1);
         }
@@ -226,28 +47,32 @@ public class AntlrCListener extends CBaseListener {
     }
 
     public void enterParameterTypeList(CParser.ParameterTypeListContext ctx) {
-        functionParametersFlag = true;
+        graphInfo.getFlags().setFunctionParametersFlag(true);
     }
 
     public void enterDirectDeclarator(CParser.DirectDeclaratorContext ctx) {
-        if (functionDeclarationFlag && ctx.children.size() == 1) {
-            if (functionParametersFlag) {
-                currentExpression.add(getDeclaratorVersion(ctx.Identifier().getText()));
-                currentExpression.add(new Variable(",", Variable.Type.CONSTANT));
+        if (graphInfo.getFlags().isFunctionDeclarationFlag() && ctx.children.size() == 1) {
+            if (graphInfo.getFlags().isFunctionParametersFlag()) {
+                currentExpression.add(
+                        graphInfo.getDeclaratorVersion(ctx.Identifier().getText()));
+                currentExpression.add(
+                        new Variable(",", Variable.Type.CONSTANT));
             } else {
-                currentExpression.add(new Variable(ctx.Identifier().getText(), Variable.Type.CONSTANT));
-                currentExpression.add(new Variable("(", Variable.Type.CONSTANT));
+                currentExpression.add(
+                        new Variable(ctx.Identifier().getText(),Variable.Type.CONSTANT));
+                currentExpression.add(
+                        new Variable("(", Variable.Type.CONSTANT));
             }
         }
     }
 
     public void enterInitDeclarator(CParser.InitDeclaratorContext ctx) {
         if (ctx.initializer() != null) {
-            Variable declarator = getDeclaratorVersion(
+            Variable declarator = graphInfo.getDeclaratorVersion(
                     ctx.declarator().directDeclarator().getChild(0).getText());
             currentExpression.add(declarator);
             currentExpression.add(new Variable("=", Variable.Type.OPERATOR));
-            isDeclarator = false;
+            graphInfo.getFlags().setDeclarator(false);
             ctx.children.remove(0);
         }
     }
@@ -260,15 +85,15 @@ public class AntlrCListener extends CBaseListener {
 
     public void enterPrimaryExpression(CParser.PrimaryExpressionContext ctx) {
         if (ctx.Identifier() != null) {
-            Variable variable = isDeclarator
-                    ? getDeclaratorVersion(ctx.Identifier().getText())
-                    : getVersion(ctx.Identifier().getText());
+            Variable variable = graphInfo.getFlags().isDeclarator()
+                    ? graphInfo.getDeclaratorVersion(ctx.Identifier().getText())
+                    : graphInfo.getVersion(ctx.Identifier().getText());
             currentExpression.add(variable);
-            isDeclarator = false;
+            graphInfo.getFlags().setDeclarator(false);
         } else {
             currentExpression.add(new Variable(ctx.getText(),Variable.Type.CONSTANT));
         }
-        if (functionParametersFlag) {
+        if (graphInfo.getFlags().isFunctionParametersFlag()) {
             currentExpression.add(new Variable(",", Variable.Type.CONSTANT));
         }
     }
@@ -276,13 +101,15 @@ public class AntlrCListener extends CBaseListener {
     public void enterPostfixExpression(CParser.PostfixExpressionContext ctx) {
         if (ctx.LeftParen() != null) {
             currentExpression.add(
-                    new Variable(ctx.children.get(0).getText()+"(", Variable.Type.CONSTANT));
+                    new Variable(ctx.children.get(0).getText()+"(",
+                            Variable.Type.CONSTANT));
             ctx.children.remove(0);
-            functionParametersFlag = true;
+            graphInfo.getFlags().setFunctionParametersFlag(true);
         }
         if (ctx.PlusPlus() != null || ctx.MinusMinus() != null) {
-            Variable prev = getVersion(ctx.postfixExpression().getText());
-            Variable cur = getDeclaratorVersion(ctx.postfixExpression().getText());
+            Variable prev = graphInfo.getVersion(ctx.postfixExpression().getText());
+            Variable cur = graphInfo
+                    .getDeclaratorVersion(ctx.postfixExpression().getText());
             currentExpression.add(cur);
             currentExpression.add(new Variable("=",Variable.Type.OPERATOR));
             currentExpression.add(prev);
@@ -294,10 +121,10 @@ public class AntlrCListener extends CBaseListener {
             }
             currentExpression.add(new Variable("1", Variable.Type.CONSTANT));
             ctx.children.clear();
-            if (iterationCounterFlag) {
+            if (graphInfo.getFlags().isIterationCounterFlag()) {
                 Set<Integer> varVersions = new HashSet<>(cur.getVersion());
                 varVersions.addAll(prev.getVersion());
-                currentVersions.put(cur.getLabel(),varVersions);
+                graphInfo.getCurrentVersions().put(cur.getLabel(),varVersions);
             }
         }
     }
@@ -307,95 +134,100 @@ public class AntlrCListener extends CBaseListener {
             currentExpression.remove(currentExpression.size()-1);
             currentExpression.add(
                     new Variable(")", Variable.Type.CONSTANT));
-            functionParametersFlag = false;
+            graphInfo.getFlags().setFunctionParametersFlag(false);
         }
     }
 
     public void enterExpressionStatement(CParser.ExpressionStatementContext ctx) {
         if (ctx.expression().assignmentExpression().assignmentOperator() != null) {
-            setDeclaratorFlag();
+            graphInfo.setDeclaratorFlag();
         }
     }
 
     public void exitExpressionStatement(CParser.ExpressionStatementContext ctx) {
         addBoxNodeWithCurExpr();
-        if (iterationCounterFlag) {
-            currentVersions.putAll(Util.mergeVersions(currentVersions,prevVersions));
+        if (graphInfo.getFlags().isIterationCounterFlag()) {
+            graphInfo.getCurrentVersions().putAll(
+                    Util.mergeVersions(graphInfo
+                            .getCurrentVersions(),graphInfo.getPrevVersions()));
         }
-        prevVersions = null;
+        graphInfo.setPrevVersions(null);
     }
 
     public void enterSelectionStatement(CParser.SelectionStatementContext ctx) {
         if (ctx.Switch() != null) {
-            switchStartFlag = true;
+            graphInfo.getFlags().setSwitchStartFlag(true);
         }
     }
 
     public void exitSelectionStatement(CParser.SelectionStatementContext ctx) {
-        List<Node> prev = getPrevNodes();
+        List<Node> prev = graphInfo.getPrevNodes();
         if (ctx.Switch() != null) {
-            switchEndFlag = true;
-            currentVersions = switchNodes.getLast().getResultVersions();
+            graphInfo.getFlags().setSwitchEndFlag(true);
+            graphInfo.setCurrentVersions(
+                    graphInfo.getCollections()
+                            .getLastSwitchNode().getResultVersions());
         } else {
-            selectionNodes.getLast().addBranchEnd(prevNode);
-            prevNode = null;
-            selectionNodes.getLast().addBranchEnd(prev);
+            graphInfo.getCollections()
+                    .getLastSelectionNode()
+                    .addBranchEnd(graphInfo.getPrevNode());
+            graphInfo.setPrevNode(null);
+            graphInfo.getCollections()
+                    .getLastSelectionNode().addBranchEnd(prev);
 
-            currentVersions = selectionNodes.getLast().getResultVersions();
-            selectionEndFlag = true;
-            /*prevVersions = new HashMap<>(currentVersions);
-            for (Map.Entry<String, Set<Integer>> entry : currentVersions.entrySet()) {
-                String label = entry.getKey();
-                Set<Integer> versions = entry.getValue();
-                if (versions.size() > 1) {
-                    currentExpression.add(getDeclaratorVersion(label));
-                    currentExpression.add(new Variable("=", Variable.Type.OPERATOR));
-                    currentExpression.add(getVersion(label));
-                    addBoxNodeWithCurExpr();
-                    currentExpression.clear();
-                }
-            }
-            prevVersions = null;*/
+            graphInfo.setCurrentVersions(
+                    graphInfo.getCollections()
+                            .getLastSelectionNode().getResultVersions());
+            graphInfo.getFlags().setSelectionEndFlag(true);
         }
         currentExpression.clear();
     }
 
     public void enterIfStatement(CParser.IfStatementContext ctx) {
-        addSelectionNode(currentExpression);
+        graphInfo.addSelectionNode(currentExpression);
         currentExpression.clear();
-        labels.addLast(Node.nodeLabel.YES);
-        Map<String,Set<Integer>> ifVersions = new HashMap<>(currentVersions);
-        currentVersions = ifVersions;
-        selectionNodes.getLast().setIfVersions(ifVersions);
+        graphInfo.getLabels().addLast(Node.nodeLabel.YES);
+        Map<String,Set<Integer>> ifVersions =
+                new HashMap<>(graphInfo.getCurrentVersions());
+        graphInfo.setCurrentVersions(ifVersions);
+        graphInfo.getCollections().getLastSelectionNode().setIfVersions(ifVersions);
     }
 
     public void exitIfStatement(CParser.IfStatementContext ctx) {
-        List<Node> prev = getPrevNodes();
-        selectionNodes.getLast().addBranchEnd(prev);
-        labels.addLast(Node.nodeLabel.NO);
-        selectionNodes.getLast().addBranchEnd(prevNode);
-        prevNode = null;
-        prevNode = selectionNodes.getLast().getSelectionNode();
-        selectionNodes.getLast().setIfVersions(currentVersions);
-        currentVersions = new HashMap<>(selectionNodes.getLast().getGlobalVersions());
-        selectionNodes.getLast().setElseVersions(currentVersions);
+        List<Node> prev = graphInfo.getPrevNodes();
+        graphInfo.getCollections().getLastSelectionNode().addBranchEnd(prev);
+        graphInfo.getLabels().addLast(Node.nodeLabel.NO);
+        graphInfo.getCollections().getLastSelectionNode()
+                .addBranchEnd(graphInfo.getPrevNode());
+        graphInfo.setPrevNode(null);
+        graphInfo.setPrevNode(graphInfo.getCollections()
+                .getLastSelectionNode().getSelectionNode());
+        graphInfo.getCollections().getLastSelectionNode()
+                .setIfVersions(graphInfo.getCurrentVersions());
+        graphInfo.setCurrentVersions(new HashMap<>(
+                graphInfo.getCollections().getLastSelectionNode().getGlobalVersions()));
+        graphInfo.getCollections().getLastSelectionNode()
+                .setElseVersions(graphInfo.getCurrentVersions());
     }
 
     public void exitElseStatement(CParser.ElseStatementContext ctx) {
-        selectionNodes.getLast().setElseVersions(currentVersions);
+        graphInfo.getCollections()
+                .getLastSelectionNode()
+                .setElseVersions(graphInfo.getCurrentVersions());
     }
 
     public void enterLabeledStatement(CParser.LabeledStatementContext ctx) {
         if (ctx.Identifier() != null) {
             currentExpression.add(
-                    new Variable(ctx.Identifier().getText() + ": ", Variable.Type.CONSTANT));
+                    new Variable(ctx.Identifier().getText() + ": ",
+                            Variable.Type.CONSTANT));
         }
         if (ctx.Case() != null) {
             SwitchNode switchNode;
-            if (switchStartFlag) {
+            if (graphInfo.getFlags().isSwitchStartFlag()) {
                 switchNode = new SwitchNode(currentExpression);
             } else {
-                switchNode = switchNodes.getLast();
+                switchNode = graphInfo.getCollections().getLastSwitchNode();
             }
             currentExpression.clear();
 
@@ -406,86 +238,113 @@ public class AntlrCListener extends CBaseListener {
                     Variable.Type.CONSTANT));
             ctx.children.remove(1);
 
-            Node selectionNode = addSelectionNode(expression);
-            labels.addLast(Node.nodeLabel.YES);
+            Node selectionNode = graphInfo.addSelectionNode(expression);
+            graphInfo.getLabels().addLast(Node.nodeLabel.YES);
 
-            if (switchEndFlag) {
-                addBreaks(selectionNode);
-                switchEndFlag = false;
+            if (graphInfo.getFlags().isSwitchEndFlag()) {
+                graphInfo.addBreaks(selectionNode);
+                graphInfo.getFlags().setSwitchEndFlag(false);
             }
-            if (switchStartFlag) {
-                switchStartFlag = false;
-                switchNodes.addLast(switchNode);
-                breakableNodes.addLast(switchNode);
+            if (graphInfo.getFlags().isSwitchStartFlag()) {
+                graphInfo.getFlags().setSwitchStartFlag(false);
+                graphInfo.getCollections().setLastSwitchNode(switchNode);
+                graphInfo.getCollections().setLastBreakableNode(switchNode);
             }
-            currentVersions = new HashMap<>(currentVersions);
-            selectionNodes.getLast().setIfVersions(currentVersions);
+            graphInfo.setCurrentVersions(
+                    new HashMap<>(graphInfo.getCurrentVersions()));
+            graphInfo.getCollections().getLastSelectionNode()
+                    .setIfVersions(graphInfo.getCurrentVersions());
         }
     }
 
     public void exitLabeledStatement(CParser.LabeledStatementContext ctx) {
         if (ctx.Case() != null) {
-            labels.addLast(Node.nodeLabel.NO);
-            prevNode = selectionNodes.getLast().getSelectionNode();
-            currentVersions = selectionNodes.removeLast().getGlobalVersions();
+            graphInfo.getLabels().addLast(Node.nodeLabel.NO);
+            graphInfo.setPrevNode(
+                    graphInfo.getCollections()
+                            .getLastSelectionNode().getSelectionNode());
+            graphInfo.setCurrentVersions(
+                    graphInfo.getCollections()
+                            .removeLastSelectionNode().getGlobalVersions());
         }
     }
 
 
     public void enterIterationStatement(CParser.IterationStatementContext ctx) {
         if (ctx.Do() != null) {
-            iterationStartFlag = true;
-            Map<String, Set<Integer>> loopVersions = new HashMap<>(currentVersions);
+            graphInfo.getFlags().setIterationStartFlag(true);
+            Map<String, Set<Integer>> loopVersions =
+                    new HashMap<>(graphInfo.getCurrentVersions());
             IterationNode iterationNode = new IterationNode(
-                    currentVersions,loopVersions, IterationNode.LoopType.INVERSE);
-            iterationNodes.addLast(iterationNode);
-            breakableNodes.addLast(iterationNode);
-            currentVersions = loopVersions;
-            iterationFlag = true;
+                    graphInfo.getCurrentVersions(),loopVersions,
+                    IterationNode.LoopType.INVERSE);
+            graphInfo.getCollections().setLastIterationNode(iterationNode);
+            graphInfo.getCollections().setLastBreakableNode(iterationNode);
+            graphInfo.setCurrentVersions(loopVersions);
+            graphInfo.getFlags().setIterationFlag(true);
         }
     }
 
     public void exitIterationStatement(CParser.IterationStatementContext ctx) {
-        List<Node> prev = getPrevNodes();
+        List<Node> prev = graphInfo.getPrevNodes();
         Node continueNode;
-        final Node selectionNode = iterationNodes.getLast().getConditionalNode();
+
+        graphInfo.getCollections()
+                .getLastIterationNode()
+                .resolvePhiCollection(graphInfo.getVersionsClass());
+
+        final Node selectionNode =
+                graphInfo.getCollections()
+                        .getLastIterationNode().getConditionalNode();
 
         if (ctx.forCondition() != null
-                && iterationNodes.getLast().getIterationCounter() != null) {
-            Node counterNode = iterationNodes.getLast().getIterationCounter();
+                && graphInfo.getCollections()
+                .getLastIterationNode()
+                .getIterationCounter() != null) {
+            Node counterNode =
+                    graphInfo.getCollections()
+                            .getLastIterationNode()
+                            .getIterationCounter();
             continueNode = counterNode;
-            addLinkToPrevNode(counterNode);
-            prevNode = counterNode;
+            graphInfo.addLinkToPrevNode(counterNode);
+            graphInfo.setPrevNode(counterNode);
         } else {
             continueNode = selectionNode;
         }
 
         for (Node node : prev) {
-            addLink(node,continueNode);
+            graphInfo.addLink(node,continueNode);
         }
-        final Node iterationNode = iterationNodes.getLast().getIterationNode();
-        addLinkToPrevNode(iterationNode);
-        labels.addLast(Node.nodeLabel.NO);
-        prevNode = selectionNode;
-        iterationEndFlag = true;
+        final Node iterationNode =
+                graphInfo.getCollections().getLastIterationNode().getIterationNode();
+        graphInfo.addLinkToPrevNode(iterationNode);
+        graphInfo.getLabels().addLast(Node.nodeLabel.NO);
+        graphInfo.setPrevNode(selectionNode);
+        graphInfo.getFlags().setIterationEndFlag(true);
 
-        if (iterationNodes.size() == 1) {
-            iterationFlag = false;
+        if (graphInfo.getCollections().getIterationNodesSize() == 1) {
+            graphInfo.getFlags().setIterationFlag(false);
         }
 
-        iterationNodes.getLast().resolvePhiCollection(versionsClass);
-
-        if (iterationNodes.size() > 1) {
-            Iterator<IterationNode> iterator = iterationNodes.descendingIterator();
+        if (graphInfo.getCollections().getIterationNodesSize() > 1) {
+            Iterator<IterationNode> iterator = graphInfo
+                    .getCollections()
+                    .getIterationNodesIterator();
             IterationNode innerLoop = iterator.next();
             IterationNode outerLoop = iterator.next();
             outerLoop.mergePhiCollections(innerLoop.getPhiCollection());
         }
 
         if (ctx.Do() != null) {
-            currentVersions = iterationNodes.getLast().getDoLoopResultGlobalVersions();
+            graphInfo.setCurrentVersions(
+                    graphInfo.getCollections()
+                            .getLastIterationNode()
+                            .getDoLoopResultGlobalVersions());
         } else {
-            currentVersions = iterationNodes.getLast().getResultGlobalVersions();
+            graphInfo.setCurrentVersions(
+                    graphInfo.getCollections()
+                            .getLastIterationNode()
+                            .getResultGlobalVersions());
         }
     }
 
@@ -495,35 +354,40 @@ public class AntlrCListener extends CBaseListener {
             addBoxNodeWithCurExpr();
         }
 
-        Map<String, Set<Integer>> loopVersions = new HashMap<>(currentVersions);
+        Map<String, Set<Integer>> loopVersions =
+                new HashMap<>(graphInfo.getCurrentVersions());
         IterationNode iterationNode =
-                new IterationNode(currentVersions,loopVersions,IterationNode.LoopType.DIRECT);
-        iterationNodes.addLast(iterationNode);
-        breakableNodes.addLast(iterationNode);
-        currentVersions = loopVersions;
-        iterationFlag = true;
+                new IterationNode(
+                        graphInfo.getCurrentVersions(),
+                        loopVersions,IterationNode.LoopType.DIRECT);
+        graphInfo.getCollections().setLastIterationNode(iterationNode);
+        graphInfo.getCollections().setLastBreakableNode(iterationNode);
+        graphInfo.setCurrentVersions(loopVersions);
+        graphInfo.getFlags().setIterationFlag(true);
     }
 
     public void exitIterationConditionExpression(
             CParser.IterationConditionExpressionContext ctx) {
-        final Node conditionNode = addNode(Node.State.SELECTION,currentExpression,null);
+        final Node conditionNode = graphInfo.addNode(
+                Node.State.SELECTION,currentExpression,null);
         currentExpression.clear();
-        labels.addLast(Node.nodeLabel.YES);
-        iterationNodes.getLast().setIterationNodes(conditionNode);
+        graphInfo.getLabels().addLast(Node.nodeLabel.YES);
+        graphInfo.getCollections()
+                .getLastIterationNode().setIterationNodes(conditionNode);
     }
 
     public void enterForIteratorExpression(CParser.ForIteratorExpressionContext ctx) {
-        iterationCounterFlag = true;
+        graphInfo.getFlags().setIterationCounterFlag(true);
     }
 
     public void exitForIteratorExpression(CParser.ForIteratorExpressionContext ctx) {
-        final Node directNode = new Node(nodesCounter, Node.State.BASIC,
+        final Node directNode = new Node(graphInfo.getNodesCounter(), Node.State.BASIC,
                 currentExpression);
-        graphNodes.add(directNode);
-        nodesCounter++;
-        iterationNodes.getLast().setIterationCounter(directNode);
+        graphInfo.graphNodesAdd(directNode);
+        graphInfo.incrementNodesCounter();
+        graphInfo.getCollections().getLastIterationNode().setIterationCounter(directNode);
         currentExpression.clear();
-        iterationCounterFlag = false;
+        graphInfo.getFlags().setIterationCounterFlag(false);
     }
 
     public void enterPostfixIterationConditionExpression(
@@ -532,51 +396,66 @@ public class AntlrCListener extends CBaseListener {
             addBoxNodeWithCurExpr();
         }
 
-        List<Node> prev = getPrevNodes();
-        final Node selectionNode = iterationNodes.getLast().getConditionalNode();
+        List<Node> prev = graphInfo.getPrevNodes();
+        final Node selectionNode =
+                graphInfo.getCollections().getLastIterationNode().getConditionalNode();
         for (Node node : prev) {
-            addLink(node,selectionNode);
+            graphInfo.addLink(node,selectionNode);
         }
-        iterationNodes.getLast().getResultLoopVersions();
+        graphInfo.getCollections().getLastIterationNode().getResultLoopVersions();
     }
 
     public void exitPostfixIterationConditionExpression(
             CParser.PostfixIterationConditionExpressionContext ctx) {
-        addNode(Node.State.SELECTION,currentExpression,iterationNodes.getLast().getConditionalNode());
+        graphInfo.addNode(Node.State.SELECTION,currentExpression,
+                graphInfo.getCollections().getLastIterationNode().getConditionalNode());
         currentExpression.clear();
-        labels.addLast(Node.nodeLabel.YES);
+        graphInfo.getLabels().addLast(Node.nodeLabel.YES);
     }
 
     public void enterJumpStatement(CParser.JumpStatementContext ctx) {
         List<Node> prev;
         switch (ctx.start.getText()) {
             case "continue":
-                if (!iterationFlag) {
-                    throw new IllegalArgumentException("Operator \"continue\" outside loop.");
+                if (!graphInfo.getFlags().isIterationFlag()) {
+                    throw new IllegalArgumentException(
+                            "Operator \"continue\" outside loop.");
                 }
-                prev = getPrevNodes();
-                Node node = iterationNodes.getLast().getIterationCounter();
+                prev = graphInfo.getPrevNodes();
+                Node node = graphInfo
+                        .getCollections()
+                        .getLastIterationNode()
+                        .getIterationCounter();
                 if (node == null) {
-                    node = iterationNodes.getLast().getConditionalNode();
+                    node = graphInfo
+                            .getCollections()
+                            .getLastIterationNode()
+                            .getConditionalNode();
                 }
                 for (Node prevNode : prev) {
-                    addLink(prevNode,node);
+                    graphInfo.addLink(prevNode,node);
                 }
-                addLinkToPrevNode(node);
-                iterationNodes.getLast().addContinueVersions(currentVersions);
+                graphInfo.addLinkToPrevNode(node);
+                graphInfo.getCollections()
+                        .getLastIterationNode()
+                        .addContinueVersions(graphInfo.getCurrentVersions());
                 break;
             case "break":
-                prev = getPrevNodes();
-                breakableNodes.getLast().addBreak(prev,currentVersions);
-                breakableNodes.getLast().addBreak(prevNode, currentVersions);
-                prevNode = null;
+                prev = graphInfo.getPrevNodes();
+                graphInfo.getCollections()
+                        .getLastBreakableNode()
+                        .addBreak(prev,graphInfo.getCurrentVersions());
+                graphInfo.getCollections()
+                        .getLastBreakableNode()
+                        .addBreak(graphInfo.getPrevNode(),graphInfo.getCurrentVersions());
+                graphInfo.setPrevNode(null);
                 break;
             case "goto":
                 List<Variable> expr = new ArrayList<>();
                 expr.add(new Variable(ctx.Goto().getText() + " " + ctx.Identifier(),
                         Variable.Type.CONSTANT));
-                addNode(Node.State.BASIC,expr,null);
-                prevNode = null;
+                graphInfo.addNode(Node.State.BASIC,expr,null);
+                graphInfo.setPrevNode(null);
                 break;
             case "return":
                 currentExpression.add(new Variable("return ", Variable.Type.CONSTANT));
@@ -589,9 +468,9 @@ public class AntlrCListener extends CBaseListener {
     public void exitJumpStatement(CParser.JumpStatementContext ctx) {
         if (ctx.start.getText().equals("return")) {
             addBoxNodeWithCurExpr();
-            prevNode = null;
+            graphInfo.setPrevNode(null);
         }
-        currentVersions.clear();
+        graphInfo.getCurrentVersions().clear();
     }
 
     public void enterAssignmentOperator(CParser.AssignmentOperatorContext ctx) {
@@ -604,7 +483,7 @@ public class AntlrCListener extends CBaseListener {
                     currentExpression.get(currentExpression.size()-1).getLabel();
             currentExpression.add(
                     new Variable("=", Variable.Type.OPERATOR));
-            currentExpression.add(getVersion(initializer));
+            currentExpression.add(graphInfo.getVersion(initializer));
             if (ctx.AndAssign() != null) {
                 operator = "&";
             }
@@ -642,16 +521,19 @@ public class AntlrCListener extends CBaseListener {
 
     public void enterAssignmentExpression(CParser.AssignmentExpressionContext ctx) {
         if (ctx.assignmentOperator() != null && ctx.assignmentOperator().Assign() != null) {
-            setDeclaratorFlag();
+            graphInfo.setDeclaratorFlag();
         }
     }
 
     public void exitAssignmentExpression(CParser.AssignmentExpressionContext ctx) {
         if (ctx.assignmentOperator() != null && ctx.assignmentOperator().Assign() != null) {
-            if (iterationCounterFlag) {
-                currentVersions.putAll(Util.mergeVersions(currentVersions,prevVersions));
+            if (graphInfo.getFlags().isIterationCounterFlag()) {
+                graphInfo.getCurrentVersions().putAll(
+                                Util.mergeVersions(
+                                        graphInfo.getCurrentVersions(),
+                                        graphInfo.getPrevVersions()));
             }
-            prevVersions = null;
+            graphInfo.setPrevVersions(null);
         }
     }
 
