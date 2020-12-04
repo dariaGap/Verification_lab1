@@ -149,6 +149,16 @@ public class AntlrCListener extends CBaseListener {
 
         Variable var = versionsClass.getVersion(versionCollection, variable);
 
+        if (var.getType() == Variable.Type.PHI) {
+            List<Variable> phiNode = new ArrayList<>();
+            Variable phiVar = getDeclaratorVersion(var.getLabel());
+            phiNode.add(phiVar);
+            phiNode.add(new Variable("=", Variable.Type.OPERATOR));
+            phiNode.add(var);
+            addNode(Node.State.BASIC,phiNode,null);
+            var = phiVar;
+        }
+
         if (iterationNodes.size() > 0 && iterationFlag) {
             IterationNode iterationNode;
             if (iterationEndFlag) {
@@ -333,6 +343,19 @@ public class AntlrCListener extends CBaseListener {
 
             currentVersions = selectionNodes.getLast().getResultVersions();
             selectionEndFlag = true;
+            /*prevVersions = new HashMap<>(currentVersions);
+            for (Map.Entry<String, Set<Integer>> entry : currentVersions.entrySet()) {
+                String label = entry.getKey();
+                Set<Integer> versions = entry.getValue();
+                if (versions.size() > 1) {
+                    currentExpression.add(getDeclaratorVersion(label));
+                    currentExpression.add(new Variable("=", Variable.Type.OPERATOR));
+                    currentExpression.add(getVersion(label));
+                    addBoxNodeWithCurExpr();
+                    currentExpression.clear();
+                }
+            }
+            prevVersions = null;*/
         }
         currentExpression.clear();
     }
