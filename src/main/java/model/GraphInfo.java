@@ -10,9 +10,9 @@ public class GraphInfo {
     private Map<String,Set<Integer>> prevVersions;
     private final Versions versionsClass = new Versions();
 
-    private Node prevNode;
+    private Set<Node> prevNodes = new HashSet<>();
 
-    private final Deque<Node.nodeLabel> labels = new ArrayDeque<>();
+    //private final Deque<Node.NodeLabel> labels = new ArrayDeque<>();
     private final Flags flags = new Flags();
 
     private final GraphCollections collections = new GraphCollections();
@@ -25,20 +25,17 @@ public class GraphInfo {
             breakableNode = collections.removeLastIterationNode();
         }
         collections.removeLastBreakableNode();
-        List<Node> breaks = breakableNode.getBreaks();
+        Set<Node> breaks = breakableNode.getBreaks();
         breaks.iterator().forEachRemaining(breakNode ->
                 addLink(breakNode,node));
     }
 
-    public void addLink(final model.Node prevNode,final model.Node node) {
-        model.Node.nodeLabel label;
+    public void addLink(final Node prevNode,final model.Node node) {
+        Node.NodeLabel label;
         if (prevNode != null) {
-            if (prevNode.isSelectionNode()) {
-                label = labels.removeLast();
-            } else {
-                label = model.Node.nodeLabel.UNDEFINED;
-            }
+            label = prevNode.getCurrentLabel();
             prevNode.addChild(label,node);
+            node.addParent(prevNode);
             if (flags.isIterationEndFlag()) {
                 flags.setIterationEndFlag(false);
                 addBreaks(node);
@@ -52,7 +49,7 @@ public class GraphInfo {
             flags.setSwitchEndFlag(false);
         }
         if (flags.isSelectionEndFlag()) {
-            List<Node> prevs = collections.getLastSelectionNode().getBranchesEnds();
+            Set<Node> prevs = collections.getLastSelectionNode().getBranchesEnds();
 
             for (Node prevNode : prevs) {
                 addLink(prevNode,node);
@@ -60,8 +57,10 @@ public class GraphInfo {
             collections.removeLastSelectionNode();
             flags.setSelectionEndFlag(false);
         } else {
-            addLink(prevNode,node);
-            prevNode = null;
+            for (Node prevNode : prevNodes) {
+                addLink(prevNode, node);
+            }
+            prevNodes.clear();
         }
     }
 
@@ -75,7 +74,7 @@ public class GraphInfo {
         graphNodes.add(node);
         nodesCounter++;
         addLinkToPrevNode(node);
-        prevNode = node;
+        prevNodes.add(node);
         if (flags.isIterationStartFlag()) {
             Iterator<IterationNode> iter = collections.getIterationNodesIterator();
             IterationNode iterationNode;
@@ -99,10 +98,11 @@ public class GraphInfo {
     }
 
     public Variable getDeclaratorVersion(final String variable) {
-        return versionsClass.setVersion(currentVersions,variable);
+        return versionsClass.setVersion(currentVersions,variable,flags.isIterationCounterFlag());
     }
 
     public Variable getVersion(final String variable) {
+        boolean isAddedToPhiCollection = false;
         Map<String,Set<Integer>> versionCollection;
         if (prevVersions != null) {
             versionCollection = prevVersions;
@@ -111,16 +111,6 @@ public class GraphInfo {
         }
 
         Variable var = versionsClass.getVersion(versionCollection, variable);
-
-        if (var.getType() == Variable.Type.PHI) {
-            List<Variable> phiNode = new ArrayList<>();
-            Variable phiVar = getDeclaratorVersion(var.getLabel());
-            phiNode.add(phiVar);
-            phiNode.add(new Variable("=", Variable.Type.OPERATOR));
-            phiNode.add(var);
-            addNode(Node.State.BASIC,phiNode,null);
-            var = phiVar;
-        }
 
         if (collections.getIterationNodesSize() > 0 && flags.isIterationFlag()) {
             IterationNode iterationNode;
@@ -135,8 +125,35 @@ public class GraphInfo {
                     iterationNode.getGlobalVersions().get(variable);
             if (varGlobalVersions != null
                     && !Collections.disjoint(varGlobalVersions,var.getVersion())) {
-                iterationNode.addToPhiCollection(var);
+                for (Integer version : varGlobalVersions) {
+                    if (var.getVersion().contains(version)) {
+                        var.removeVersion(version);
+                    }
+                }
+                if (var.getVersion().size() > 0 ) {
+                    List<Variable> phiNode = new ArrayList<>();
+                    Variable phiVar = getDeclaratorVersion(var.getLabel());
+                    phiNode.add(phiVar);
+                    phiNode.add(new Variable("=", Variable.Type.OPERATOR));
+                    phiNode.add(var);
+                    addNode(Node.State.BASIC,phiNode,null);
+                    iterationNode.addToPhiCollection(var);
+                    var = phiVar;
+                } else {
+                    iterationNode.addToPhiCollection(var);
+                }
+                isAddedToPhiCollection = true;
             }
+        }
+
+        if (var.getVersion().size() > 1 && !isAddedToPhiCollection) {
+            List<Variable> phiNode = new ArrayList<>();
+            Variable phiVar = getDeclaratorVersion(var.getLabel());
+            phiNode.add(phiVar);
+            phiNode.add(new Variable("=", Variable.Type.OPERATOR));
+            phiNode.add(var);
+            addNode(Node.State.BASIC,phiNode,null);
+            var = phiVar;
         }
 
         return var;
@@ -147,8 +164,8 @@ public class GraphInfo {
         prevVersions = new HashMap<>(currentVersions);
     }
 
-    public List<Node> getPrevNodes() {
-        List<Node> nodes = new ArrayList<>();
+    public Set<Node> getPrevNodes() {
+        Set<Node> nodes = new HashSet<>();
         if (flags.isSelectionEndFlag()) {
             SelectionNode selectionNode = collections.removeLastSelectionNode();
             nodes.addAll(selectionNode.getBranchesEnds());
@@ -166,6 +183,7 @@ public class GraphInfo {
             nodes.addAll(iterationNode.getBreaks());
             flags.setIterationEndFlag(false);
         }
+        prevNodes.addAll(nodes);
         return nodes;
     }
 
@@ -198,15 +216,15 @@ public class GraphInfo {
     }
 
     public void setPrevNode(Node prevNode) {
-        this.prevNode = prevNode;
+        if (prevNode == null) {
+            this.prevNodes.clear();
+        } else {
+            this.prevNodes.add(prevNode);
+        }
     }
 
-    public Node getPrevNode() {
-        return prevNode;
-    }
-
-    public Deque<Node.nodeLabel> getLabels() {
-        return labels;
+    public Set<Node> getPrevNode() {
+        return prevNodes;
     }
 
     public void graphNodesAdd(Node node) {
@@ -223,5 +241,68 @@ public class GraphInfo {
 
     public Versions getVersionsClass() {
         return versionsClass;
+    }
+
+    public void addBoxNodeBeforeNode(Node nextNode,Node nodeToAdd, Set<Node> prevNodes) {
+        for (Node parent : prevNodes) {
+            parent.replaceChild(nextNode,nodeToAdd);
+            nodeToAdd.addParent(parent);
+        }
+        nextNode.getParents().removeAll(prevNodes);
+        nextNode.addParent(nodeToAdd);
+        nodeToAdd.addChild(Node.NodeLabel.UNDEFINED,nextNode);
+        graphNodes.add(nodeToAdd);
+    }
+
+    public void mergePhiCollections() {
+        if (collections.getIterationNodesSize() > 1) {
+            Iterator<IterationNode> iterator = collections.getIterationNodesIterator();
+            IterationNode innerLoop = iterator.next();
+            IterationNode outerLoop = iterator.next();
+            outerLoop.mergePhiCollections(innerLoop.getPhiCollection(),innerLoop);
+        }
+
+    }
+
+    public Node addPhiResolveNode(final String var,
+                                  final Node prevNode,
+                                  final Set<Node> beforeLoopNodes) {
+        List<Variable> variables = new ArrayList<>();
+        Variable phiVar = versionsClass.getVersion(currentVersions,var);
+        variables.add(getDeclaratorVersion(var));
+        variables.add(new Variable("=", Variable.Type.OPERATOR));
+        variables.add(phiVar);
+        Node node = new Node(nodesCounter, Node.State.BASIC,variables);
+        incrementNodesCounter();
+        addBoxNodeBeforeNode(prevNode,node,beforeLoopNodes);
+        if (collections.getIterationNodesSize() > 1) {
+            Iterator<IterationNode> iter = collections.getIterationNodesIterator();
+            iter.next();
+            IterationNode outLoop = iter.next();
+            Set<Integer> globalVersions = outLoop.getGlobalVersions().get(phiVar.getLabel());
+            if (!Collections.disjoint(globalVersions,phiVar.getVersion())) {
+                outLoop.addToPhiCollection(phiVar);
+            }
+        }
+        return node;
+    }
+
+    public void replaceNode(Node prevNode, Node afterNode) {
+        for (Node parent : prevNode.getParents()) {
+            parent.replaceChild(prevNode,afterNode);
+        }
+
+        for (Node parent : afterNode.getParents()) {
+            if (parent != prevNode) {
+                parent.replaceChild(afterNode,prevNode);
+            }
+        }
+
+        Node tmpNode = new Node();
+        tmpNode.copyNode(afterNode);
+        afterNode.copyNode(prevNode);
+        afterNode.replaceChild(afterNode,prevNode);
+        prevNode.copyNode(tmpNode);
+        prevNode.replaceParent(prevNode,afterNode);
     }
 }

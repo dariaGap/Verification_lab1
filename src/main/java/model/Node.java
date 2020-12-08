@@ -4,15 +4,12 @@ import guru.nidi.graphviz.attribute.Label;
 import guru.nidi.graphviz.model.MutableGraph;
 import guru.nidi.graphviz.model.MutableNode;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 import static guru.nidi.graphviz.model.Factory.mutNode;
 
 public class Node {
-    public enum nodeLabel {
+    public enum NodeLabel {
         YES, NO, UNDEFINED;
 
         @Override
@@ -29,10 +26,11 @@ public class Node {
     }
 
     public enum State {
-        SELECTION, BASIC;
+        SELECTION, BASIC
     }
 
-    private Map<Node, nodeLabel> children = new HashMap<>();
+    private Map<Node, NodeLabel> children = new HashMap<>();
+    private Set<Node> parents = new HashSet<>();
     private Integer number;
     private State state;
     private List<Variable> variables;
@@ -58,12 +56,24 @@ public class Node {
         this.variables = new ArrayList<>(variables);
     }
 
+    public NodeLabel getCurrentLabel() {
+        if (isSelectionNode()) {
+            return children.size() == 0 ? NodeLabel.YES : NodeLabel.NO;
+        }
+        return NodeLabel.UNDEFINED;
+    }
+
     public void copyNode(final Node node) {
         this.node = node.node;
         this.variables = node.variables;
-        this.children.putAll(node.children);
+        this.children = node.getChildren();
+        this.parents = node.getParents();
         this.number = node.number;
         this.state = node.state;
+    }
+
+    public Map<Node,NodeLabel> getChildren() {
+        return children;
     }
 
     public MutableNode getNode(final MutableGraph graph) {
@@ -77,9 +87,32 @@ public class Node {
         return this.state == State.SELECTION;
     }
 
-    public void addChild(final nodeLabel label, final Node node) {
+    public void addChild(final NodeLabel label, final Node node) {
         if (node != null)
             children.put(node,label);
+    }
+
+    public void replaceChild(final Node oldChild, final Node newChild) {
+        NodeLabel label = children.remove(oldChild);
+        children.put(newChild,label);
+    }
+
+    public void replaceParent(final Node oldParent, final Node newParent) {
+        parents.remove(oldParent);
+        parents.add(newParent);
+    }
+
+    public void addParent(final Node node) {
+        if (node != null)
+            parents.add(node);
+    }
+
+    public List<Variable> getVariables() {
+        return variables;
+    }
+
+    public Set<Node> getParents() {
+        return parents;
     }
 
     public MutableNode createNode(final MutableGraph graph) {
@@ -104,7 +137,7 @@ public class Node {
 
     public void addLinks(final MutableGraph graph){
         children.forEach((childNode,label) ->
-            this.getNode(graph).addLink(
+             this.getNode(graph).addLink(
                     this.getNode(graph).linkTo(childNode.getNode(graph))
                         .with(Label.of(label.toString()))));
     }
@@ -115,5 +148,9 @@ public class Node {
             text += variable.getText();
         }
         return text;
+    }
+
+    public boolean equals(Node node) {
+        return this.number.equals(node.number);
     }
 }

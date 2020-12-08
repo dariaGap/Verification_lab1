@@ -5,7 +5,6 @@ import util.Util;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -121,11 +120,6 @@ public class AntlrCListener extends CBaseListener {
             }
             currentExpression.add(new Variable("1", Variable.Type.CONSTANT));
             ctx.children.clear();
-            if (graphInfo.getFlags().isIterationCounterFlag()) {
-                Set<Integer> varVersions = new HashSet<>(cur.getVersion());
-                varVersions.addAll(prev.getVersion());
-                graphInfo.getCurrentVersions().put(cur.getLabel(),varVersions);
-            }
         }
     }
 
@@ -161,7 +155,7 @@ public class AntlrCListener extends CBaseListener {
     }
 
     public void exitSelectionStatement(CParser.SelectionStatementContext ctx) {
-        List<Node> prev = graphInfo.getPrevNodes();
+        Set<Node> prev = graphInfo.getPrevNodes();
         if (ctx.Switch() != null) {
             graphInfo.getFlags().setSwitchEndFlag(true);
             graphInfo.setCurrentVersions(
@@ -186,7 +180,7 @@ public class AntlrCListener extends CBaseListener {
     public void enterIfStatement(CParser.IfStatementContext ctx) {
         graphInfo.addSelectionNode(currentExpression);
         currentExpression.clear();
-        graphInfo.getLabels().addLast(Node.nodeLabel.YES);
+        //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
         Map<String,Set<Integer>> ifVersions =
                 new HashMap<>(graphInfo.getCurrentVersions());
         graphInfo.setCurrentVersions(ifVersions);
@@ -194,9 +188,9 @@ public class AntlrCListener extends CBaseListener {
     }
 
     public void exitIfStatement(CParser.IfStatementContext ctx) {
-        List<Node> prev = graphInfo.getPrevNodes();
+        Set<Node> prev = graphInfo.getPrevNodes();
         graphInfo.getCollections().getLastSelectionNode().addBranchEnd(prev);
-        graphInfo.getLabels().addLast(Node.nodeLabel.NO);
+        //graphInfo.getLabels().addLast(Node.NodeLabel.NO);
         graphInfo.getCollections().getLastSelectionNode()
                 .addBranchEnd(graphInfo.getPrevNode());
         graphInfo.setPrevNode(null);
@@ -239,7 +233,7 @@ public class AntlrCListener extends CBaseListener {
             ctx.children.remove(1);
 
             Node selectionNode = graphInfo.addSelectionNode(expression);
-            graphInfo.getLabels().addLast(Node.nodeLabel.YES);
+            //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
 
             if (graphInfo.getFlags().isSwitchEndFlag()) {
                 graphInfo.addBreaks(selectionNode);
@@ -259,7 +253,7 @@ public class AntlrCListener extends CBaseListener {
 
     public void exitLabeledStatement(CParser.LabeledStatementContext ctx) {
         if (ctx.Case() != null) {
-            graphInfo.getLabels().addLast(Node.nodeLabel.NO);
+            //graphInfo.getLabels().addLast(Node.NodeLabel.NO);
             graphInfo.setPrevNode(
                     graphInfo.getCollections()
                             .getLastSelectionNode().getSelectionNode());
@@ -277,7 +271,7 @@ public class AntlrCListener extends CBaseListener {
                     new HashMap<>(graphInfo.getCurrentVersions());
             IterationNode iterationNode = new IterationNode(
                     graphInfo.getCurrentVersions(),loopVersions,
-                    IterationNode.LoopType.INVERSE);
+                    IterationNode.LoopType.INVERSE, graphInfo.getPrevNode());
             graphInfo.getCollections().setLastIterationNode(iterationNode);
             graphInfo.getCollections().setLastBreakableNode(iterationNode);
             graphInfo.setCurrentVersions(loopVersions);
@@ -286,16 +280,19 @@ public class AntlrCListener extends CBaseListener {
     }
 
     public void exitIterationStatement(CParser.IterationStatementContext ctx) {
-        List<Node> prev = graphInfo.getPrevNodes();
+        Set<Node> prev = graphInfo.getPrevNodes();
         Node continueNode;
 
-        graphInfo.getCollections()
-                .getLastIterationNode()
-                .resolvePhiCollection(graphInfo.getVersionsClass());
+        graphInfo.setCurrentVersions(graphInfo.getCollections()
+                        .getLastIterationNode().getGlobalVersions());
+        graphInfo.getCollections().getLastIterationNode()
+                .resolvePhiCollection(graphInfo);
+        graphInfo.mergePhiCollections();
 
-        final Node selectionNode =
-                graphInfo.getCollections()
+        final Node selectionNode = graphInfo.getCollections()
                         .getLastIterationNode().getConditionalNode();
+        final Node iterNode = graphInfo.getCollections()
+                .getLastIterationNode().getIterationNode();
 
         if (ctx.forCondition() != null
                 && graphInfo.getCollections()
@@ -309,42 +306,22 @@ public class AntlrCListener extends CBaseListener {
             graphInfo.addLinkToPrevNode(counterNode);
             graphInfo.setPrevNode(counterNode);
         } else {
-            continueNode = selectionNode;
+            continueNode = iterNode;
         }
 
+        IterationNode iter = graphInfo.getCollections().getLastIterationNode();
+        prev.addAll(iter.getContinues());
         for (Node node : prev) {
-            graphInfo.addLink(node,continueNode);
+                graphInfo.addLink(node, continueNode);
         }
         final Node iterationNode =
                 graphInfo.getCollections().getLastIterationNode().getIterationNode();
         graphInfo.addLinkToPrevNode(iterationNode);
-        graphInfo.getLabels().addLast(Node.nodeLabel.NO);
         graphInfo.setPrevNode(selectionNode);
         graphInfo.getFlags().setIterationEndFlag(true);
 
         if (graphInfo.getCollections().getIterationNodesSize() == 1) {
             graphInfo.getFlags().setIterationFlag(false);
-        }
-
-        if (graphInfo.getCollections().getIterationNodesSize() > 1) {
-            Iterator<IterationNode> iterator = graphInfo
-                    .getCollections()
-                    .getIterationNodesIterator();
-            IterationNode innerLoop = iterator.next();
-            IterationNode outerLoop = iterator.next();
-            outerLoop.mergePhiCollections(innerLoop.getPhiCollection());
-        }
-
-        if (ctx.Do() != null) {
-            graphInfo.setCurrentVersions(
-                    graphInfo.getCollections()
-                            .getLastIterationNode()
-                            .getDoLoopResultGlobalVersions());
-        } else {
-            graphInfo.setCurrentVersions(
-                    graphInfo.getCollections()
-                            .getLastIterationNode()
-                            .getResultGlobalVersions());
         }
     }
 
@@ -359,7 +336,7 @@ public class AntlrCListener extends CBaseListener {
         IterationNode iterationNode =
                 new IterationNode(
                         graphInfo.getCurrentVersions(),
-                        loopVersions,IterationNode.LoopType.DIRECT);
+                        loopVersions,IterationNode.LoopType.DIRECT,graphInfo.getPrevNode());
         graphInfo.getCollections().setLastIterationNode(iterationNode);
         graphInfo.getCollections().setLastBreakableNode(iterationNode);
         graphInfo.setCurrentVersions(loopVersions);
@@ -371,7 +348,7 @@ public class AntlrCListener extends CBaseListener {
         final Node conditionNode = graphInfo.addNode(
                 Node.State.SELECTION,currentExpression,null);
         currentExpression.clear();
-        graphInfo.getLabels().addLast(Node.nodeLabel.YES);
+        //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
         graphInfo.getCollections()
                 .getLastIterationNode().setIterationNodes(conditionNode);
     }
@@ -386,8 +363,36 @@ public class AntlrCListener extends CBaseListener {
         graphInfo.graphNodesAdd(directNode);
         graphInfo.incrementNodesCounter();
         graphInfo.getCollections().getLastIterationNode().setIterationCounter(directNode);
-        currentExpression.clear();
+
         graphInfo.getFlags().setIterationCounterFlag(false);
+
+        String var = currentExpression.get(0).getLabel();
+        Variable phiVar =
+                graphInfo.getVersionsClass().getVersion(graphInfo.getCurrentVersions(),var);
+        List<Variable> variables = new ArrayList<>();
+        variables.add(graphInfo.getDeclaratorVersion(var));
+        variables.add(new Variable("=", Variable.Type.OPERATOR));
+        variables.add(phiVar);
+        Node node = new Node(graphInfo.getNodesCounter(), Node.State.BASIC,variables);
+        graphInfo.incrementNodesCounter();
+        graphInfo.addBoxNodeBeforeNode(
+                graphInfo.getCollections().getLastIterationNode().getIterationNode(),
+                node,
+                graphInfo.getCollections().getLastIterationNode().getBeforeLoopNodes());
+        /*Node node = graphInfo.addPhiResolveNode(var,graphInfo.getCollections()
+                .getLastIterationNode().getIterationNode());*/
+        graphInfo.getCollections().getLastIterationNode().setIterationNode(node);
+
+        graphInfo.getCollections().getLastIterationNode()
+                .getGlobalVersions().putAll(graphInfo.getCurrentVersions());
+        //graphInfo.getCollections().getLastIterationNode().getBasicVersions().putAll(graphInfo.getCurrentVersions());
+
+        for (Variable variable : graphInfo.getCollections()
+                .getLastIterationNode().getPhiCollection()) {
+            variable.getVersion().clear();
+        }
+
+        currentExpression.clear();
     }
 
     public void enterPostfixIterationConditionExpression(
@@ -396,13 +401,20 @@ public class AntlrCListener extends CBaseListener {
             addBoxNodeWithCurExpr();
         }
 
-        List<Node> prev = graphInfo.getPrevNodes();
+        graphInfo.getCollections().getLastIterationNode().getResultLoopVersions(graphInfo);
+
+        Set<Node> prev = graphInfo.getPrevNodes();
         final Node selectionNode =
                 graphInfo.getCollections().getLastIterationNode().getConditionalNode();
-        for (Node node : prev) {
+        IterationNode iter = graphInfo.getCollections().getLastIterationNode();
+        prev.addAll(iter.getContinues());
+        iter.getContinues().clear();
+        graphInfo.getPrevNode().addAll(prev);
+        /*for (Node node : prev) {
             graphInfo.addLink(node,selectionNode);
-        }
-        graphInfo.getCollections().getLastIterationNode().getResultLoopVersions();
+        }*/
+
+        //graphInfo.addContinues();
     }
 
     public void exitPostfixIterationConditionExpression(
@@ -410,32 +422,22 @@ public class AntlrCListener extends CBaseListener {
         graphInfo.addNode(Node.State.SELECTION,currentExpression,
                 graphInfo.getCollections().getLastIterationNode().getConditionalNode());
         currentExpression.clear();
-        graphInfo.getLabels().addLast(Node.nodeLabel.YES);
+        //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
     }
 
     public void enterJumpStatement(CParser.JumpStatementContext ctx) {
-        List<Node> prev;
+        Set<Node> prev;
         switch (ctx.start.getText()) {
             case "continue":
                 if (!graphInfo.getFlags().isIterationFlag()) {
                     throw new IllegalArgumentException(
                             "Operator \"continue\" outside loop.");
                 }
-                prev = graphInfo.getPrevNodes();
-                Node node = graphInfo
-                        .getCollections()
+                graphInfo.getPrevNodes();
+                graphInfo.getCollections()
                         .getLastIterationNode()
-                        .getIterationCounter();
-                if (node == null) {
-                    node = graphInfo
-                            .getCollections()
-                            .getLastIterationNode()
-                            .getConditionalNode();
-                }
-                for (Node prevNode : prev) {
-                    graphInfo.addLink(prevNode,node);
-                }
-                graphInfo.addLinkToPrevNode(node);
+                        .addContinues(graphInfo.getPrevNode());
+                graphInfo.setPrevNode(null);
                 graphInfo.getCollections()
                         .getLastIterationNode()
                         .addContinueVersions(graphInfo.getCurrentVersions());

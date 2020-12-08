@@ -18,15 +18,15 @@ public class Versions {
                              String variable) {
         Set<Integer> variableVersions = versionsCollection.get(variable);
         if (variableVersions == null) {
-            log.error("model.Variable \'" + variable + "\' have not been initialized.");
-            throw new IllegalArgumentException("model.Variable \'" + variable + "\' have not been initialized.");
+            log.error("model.Variable '" + variable + "' have not been initialized.");
+            throw new IllegalArgumentException("model.Variable '" + variable + "' have not been initialized.");
         } else {
             return new Variable(variable,variableVersions);
         }
     }
 
     public Variable setVersion(Map<String, Set<Integer>> versionsCollection,
-                           String variable) {
+                           String variable, boolean isCounter) {
         Set<Integer> versions;
         Integer version = lastVersion.get(variable);
         versions = new HashSet<>();
@@ -39,8 +39,15 @@ public class Versions {
             version++;
             lastVersion.put(variable,version);
             versions.add(version);
+            if (isCounter) {
+                versions.addAll(versionsCollection.get(variable));
+            }
             versionsCollection.put(variable,versions);
             return new Variable(variable,version, Variable.Type.DECLARATOR);
         }
+    }
+
+    public Integer getLastVersion(String var) {
+        return lastVersion.get(var);
     }
 }

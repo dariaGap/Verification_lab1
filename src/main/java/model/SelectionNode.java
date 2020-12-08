@@ -6,7 +6,7 @@ import java.util.*;
 
 public class SelectionNode {
     private Node selectionNode;
-    private List<Node> branchesEnds = new ArrayList<>();
+    private Set<Node> branchesEnds = new HashSet<>();
     private Map<String, Set<Integer>> ifVersions = new HashMap<>();
     private Map<String, Set<Integer>> elseVersions = new HashMap<>();
     private Map<String,Set<Integer>> globalVersions;
@@ -25,11 +25,11 @@ public class SelectionNode {
         branchesEnds.add(node);
     }
 
-    public void addBranchEnd(final List<Node> nodes) {
+    public void addBranchEnd(final Set<Node> nodes) {
         branchesEnds.addAll(nodes);
     }
 
-    public List<Node> getBranchesEnds() {
+    public Set<Node> getBranchesEnds() {
         return branchesEnds;
     }
 

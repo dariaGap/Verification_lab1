@@ -6,7 +6,7 @@ import java.util.Set;
 
 public class Variable {
     public enum Type {
-        VAR, PHI, OPERATOR, CONSTANT, DECLARATOR;
+        VAR, PHI, OPERATOR, CONSTANT, DECLARATOR
     }
 
     private String label;
@@ -48,7 +48,15 @@ public class Variable {
     }
 
     public Set<Integer> getVersion() {
-        return new HashSet<>(version);
+        //return new HashSet<>(version);
+        return version;
+    }
+
+    public void removeVersion(final Integer version) {
+        this.version.remove(version);
+        if (this.version.size() <= 1) {
+            type = Type.VAR;
+        }
     }
 
     public void addVersion(Set<Integer> version) {
