@@ -1,6 +1,5 @@
 package model;
 
-import model.Node;
 import util.Util;
 
 import java.util.*;
@@ -23,9 +22,5 @@ public class Breakable {
 
     public Set<Node> getBreaks() {
         return breaks;
-    }
-
-    public void setBreakVersions(Map<String, Set<Integer>> breakVersions) {
-        this.breakVersions.putAll(Util.mergeVersions(this.breakVersions,breakVersions));
     }
 }

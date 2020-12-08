@@ -30,8 +30,8 @@ public class GraphCollections {
         breakableNodes.addLast(breakableNode);
     }
 
-    public Breakable removeLastBreakableNode() {
-        return breakableNodes.removeLast();
+    public void removeLastBreakableNode() {
+        breakableNodes.removeLast();
     }
 
     public SwitchNode getLastSwitchNode() {

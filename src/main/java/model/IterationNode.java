@@ -12,14 +12,13 @@ public class IterationNode extends Breakable {
     private Node iterationNode;
     private Node conditionalNode;
     private Node iterationCounter;
-    private Set<Node> beforeLoopNodes = new HashSet<>();
-    private Map<String, Set<Integer>> continueVersions = new HashMap<>();
-    private Set<Node> continues = new HashSet<>();
-    private Map<String, Set<Integer>> loopVersions;
-    private Map<String,Set<Integer>> globalVersions;
-    //private Map<String,Set<Integer>> basicVersions;
-    private List<Variable> phiCollection = new ArrayList<>();
-    private LoopType type;
+    private final Set<Node> beforeLoopNodes = new HashSet<>();
+    private final Map<String, Set<Integer>> continueVersions = new HashMap<>();
+    private final Set<Node> continues = new HashSet<>();
+    private final Map<String, Set<Integer>> loopVersions;
+    private final Map<String,Set<Integer>> globalVersions;
+    private final List<Variable> phiCollection = new ArrayList<>();
+    private final LoopType type;
 
     public IterationNode(final Map<String, Set<Integer>> globalVersions,
                          final Map<String,Set<Integer>> loopVersions,
@@ -65,10 +64,6 @@ public class IterationNode extends Breakable {
         return globalVersions;
     }
 
-    public Map<String,Set<Integer>> getLoopVersions() {
-        return loopVersions;
-    }
-
     public void addContinueVersions(final Map<String, Set<Integer>> versions) {
         continueVersions.putAll(Util.mergeVersions(continueVersions,versions));
     }
@@ -82,7 +77,7 @@ public class IterationNode extends Breakable {
         return false;
     }
 
-    public Map<String, Set<Integer>> getResultLoopVersions(GraphInfo graphInfo) {
+    public void getResultLoopVersions(GraphInfo graphInfo) {
         for (Map.Entry<String, Set<Integer>> entry : continueVersions.entrySet()) {
             String var = entry.getKey();
             Set<Integer> versions = entry.getValue();
@@ -98,7 +93,6 @@ public class IterationNode extends Breakable {
         }
         loopVersions.putAll(Util.mergeVersions(loopVersions,continueVersions));
         continueVersions.clear();
-        return loopVersions;
     }
 
     public void addToPhiCollection(final Variable variable) {
@@ -126,8 +120,7 @@ public class IterationNode extends Breakable {
 
         Node prevIterationNode = iterationNode;
 
-        for (int i = 0; i<phiCollection.size(); i++) {
-            Variable var = phiCollection.get(i);
+        for (Variable var : phiCollection) {
             Set<Integer> varVersions = globalVersions.get(var.getLabel());
             if (var.getVersion().containsAll(varVersions)
                     && varVersions.containsAll(var.getVersion())) {
@@ -181,22 +174,11 @@ public class IterationNode extends Breakable {
         globalVersions.putAll(Util.mergeVersions(globalVersions,breakVersions));
     }
 
-    public Node getNodeByVar(GraphInfo graphInfo,Variable variable) {
-        List<Node> nodes = graphInfo.getGraphNodes();
-        for (Node node : nodes) {
-            if (node.getVariables().contains(variable)) {
-                return node;
-            }
-        }
-        return null;
-    }
-
     public void mergePhiCollections(List<Variable> innerPhiCollection,
                                     IterationNode innerLoop) {
         List<Variable> innerPhiCopy = new ArrayList<>(innerPhiCollection);
         for (Variable variable : innerPhiCopy) {
             Set<Integer> varGlobalVersions = this.globalVersions.get(variable.getLabel());
-            //Set<Integer> varLoopVersions = this.loopVersions.get(variable.getLabel());
             Set<Integer> varLoopVersions = innerLoop.getGlobalVersions().get(variable.getLabel());
             if (varGlobalVersions != null && varLoopVersions != null
                     && !Collections.disjoint(varGlobalVersions,varLoopVersions)) {
@@ -222,20 +204,7 @@ public class IterationNode extends Breakable {
         return continues;
     }
 
-    public void clearContinues() {
-        continues.clear();
-    }
-
-    public void clearContinueVersions() {
-        continueVersions.clear();
-    }
-
     public Set<Node> getBeforeLoopNodes() {
         return beforeLoopNodes;
     }
-
-    /*public Map<String,Set<Integer>> getBasicVersions() {
-        return basicVersions;
-    }*/
-
 }

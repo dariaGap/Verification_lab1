@@ -10,9 +10,8 @@ public class GraphInfo {
     private Map<String,Set<Integer>> prevVersions;
     private final Versions versionsClass = new Versions();
 
-    private Set<Node> prevNodes = new HashSet<>();
+    private final Set<Node> prevNodes = new HashSet<>();
 
-    //private final Deque<Node.NodeLabel> labels = new ArrayDeque<>();
     private final Flags flags = new Flags();
 
     private final GraphCollections collections = new GraphCollections();

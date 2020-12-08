@@ -143,11 +143,11 @@ public class Node {
     }
 
     private String getText() {
-        String text = "";
+        StringBuilder text = new StringBuilder();
         for (Variable variable : variables) {
-            text += variable.getText();
+            text.append(variable.getText());
         }
-        return text;
+        return text.toString();
     }
 
     public boolean equals(Node node) {

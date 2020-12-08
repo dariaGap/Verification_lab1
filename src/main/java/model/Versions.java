@@ -8,7 +8,7 @@ import java.util.*;
 public class Versions {
     private static final Logger log = LoggerFactory.getLogger(Versions.class);
 
-    private Map<String,Integer> lastVersion;
+    private final Map<String,Integer> lastVersion;
 
     public Versions() {
         lastVersion = new HashMap<>();

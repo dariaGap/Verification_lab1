@@ -5,11 +5,11 @@ import util.Util;
 import java.util.*;
 
 public class SelectionNode {
-    private Node selectionNode;
-    private Set<Node> branchesEnds = new HashSet<>();
+    private final Node selectionNode;
+    private final Set<Node> branchesEnds = new HashSet<>();
     private Map<String, Set<Integer>> ifVersions = new HashMap<>();
     private Map<String, Set<Integer>> elseVersions = new HashMap<>();
-    private Map<String,Set<Integer>> globalVersions;
+    private final Map<String,Set<Integer>> globalVersions;
 
     public SelectionNode(final Node selectionNode,
                          final Map<String,Set<Integer>> globalVersions) {
@@ -19,10 +19,6 @@ public class SelectionNode {
 
     public Node getSelectionNode() {
         return selectionNode;
-    }
-
-    public void addBranchEnd(final Node node) {
-        branchesEnds.add(node);
     }
 
     public void addBranchEnd(final Set<Node> nodes) {

@@ -4,7 +4,6 @@ import util.Util;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,7 +13,7 @@ import static guru.nidi.graphviz.model.Factory.mutGraph;
 public class AntlrCListener extends CBaseListener {
     private MutableGraph graph;
     private final List<Variable> currentExpression = new ArrayList<>();
-    private GraphInfo graphInfo = new GraphInfo();
+    private final GraphInfo graphInfo = new GraphInfo();
 
     public MutableGraph getGraph() {
         graphInfo.getGraphNodes().forEach(node -> node.addLinks(graph));
@@ -180,7 +179,6 @@ public class AntlrCListener extends CBaseListener {
     public void enterIfStatement(CParser.IfStatementContext ctx) {
         graphInfo.addSelectionNode(currentExpression);
         currentExpression.clear();
-        //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
         Map<String,Set<Integer>> ifVersions =
                 new HashMap<>(graphInfo.getCurrentVersions());
         graphInfo.setCurrentVersions(ifVersions);
@@ -190,7 +188,6 @@ public class AntlrCListener extends CBaseListener {
     public void exitIfStatement(CParser.IfStatementContext ctx) {
         Set<Node> prev = graphInfo.getPrevNodes();
         graphInfo.getCollections().getLastSelectionNode().addBranchEnd(prev);
-        //graphInfo.getLabels().addLast(Node.NodeLabel.NO);
         graphInfo.getCollections().getLastSelectionNode()
                 .addBranchEnd(graphInfo.getPrevNode());
         graphInfo.setPrevNode(null);
@@ -233,7 +230,6 @@ public class AntlrCListener extends CBaseListener {
             ctx.children.remove(1);
 
             Node selectionNode = graphInfo.addSelectionNode(expression);
-            //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
 
             if (graphInfo.getFlags().isSwitchEndFlag()) {
                 graphInfo.addBreaks(selectionNode);
@@ -253,7 +249,6 @@ public class AntlrCListener extends CBaseListener {
 
     public void exitLabeledStatement(CParser.LabeledStatementContext ctx) {
         if (ctx.Case() != null) {
-            //graphInfo.getLabels().addLast(Node.NodeLabel.NO);
             graphInfo.setPrevNode(
                     graphInfo.getCollections()
                             .getLastSelectionNode().getSelectionNode());
@@ -348,7 +343,6 @@ public class AntlrCListener extends CBaseListener {
         final Node conditionNode = graphInfo.addNode(
                 Node.State.SELECTION,currentExpression,null);
         currentExpression.clear();
-        //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
         graphInfo.getCollections()
                 .getLastIterationNode().setIterationNodes(conditionNode);
     }
@@ -379,13 +373,10 @@ public class AntlrCListener extends CBaseListener {
                 graphInfo.getCollections().getLastIterationNode().getIterationNode(),
                 node,
                 graphInfo.getCollections().getLastIterationNode().getBeforeLoopNodes());
-        /*Node node = graphInfo.addPhiResolveNode(var,graphInfo.getCollections()
-                .getLastIterationNode().getIterationNode());*/
         graphInfo.getCollections().getLastIterationNode().setIterationNode(node);
 
         graphInfo.getCollections().getLastIterationNode()
                 .getGlobalVersions().putAll(graphInfo.getCurrentVersions());
-        //graphInfo.getCollections().getLastIterationNode().getBasicVersions().putAll(graphInfo.getCurrentVersions());
 
         for (Variable variable : graphInfo.getCollections()
                 .getLastIterationNode().getPhiCollection()) {
@@ -404,17 +395,10 @@ public class AntlrCListener extends CBaseListener {
         graphInfo.getCollections().getLastIterationNode().getResultLoopVersions(graphInfo);
 
         Set<Node> prev = graphInfo.getPrevNodes();
-        final Node selectionNode =
-                graphInfo.getCollections().getLastIterationNode().getConditionalNode();
         IterationNode iter = graphInfo.getCollections().getLastIterationNode();
         prev.addAll(iter.getContinues());
         iter.getContinues().clear();
         graphInfo.getPrevNode().addAll(prev);
-        /*for (Node node : prev) {
-            graphInfo.addLink(node,selectionNode);
-        }*/
-
-        //graphInfo.addContinues();
     }
 
     public void exitPostfixIterationConditionExpression(
@@ -422,7 +406,6 @@ public class AntlrCListener extends CBaseListener {
         graphInfo.addNode(Node.State.SELECTION,currentExpression,
                 graphInfo.getCollections().getLastIterationNode().getConditionalNode());
         currentExpression.clear();
-        //graphInfo.getLabels().addLast(Node.NodeLabel.YES);
     }
 
     public void enterJumpStatement(CParser.JumpStatementContext ctx) {

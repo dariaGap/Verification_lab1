@@ -1,6 +1,5 @@
 package model;
 
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -9,7 +8,7 @@ public class Variable {
         VAR, PHI, OPERATOR, CONSTANT, DECLARATOR
     }
 
-    private String label;
+    private final String label;
     private Set<Integer> version = new HashSet<>();
     private Type type;
 
@@ -48,7 +47,6 @@ public class Variable {
     }
 
     public Set<Integer> getVersion() {
-        //return new HashSet<>(version);
         return version;
     }
 
@@ -70,12 +68,12 @@ public class Variable {
     }
 
     private String resolvePhi(){
-        String result = "phi(";
+        StringBuilder result = new StringBuilder("phi(");
         for (Integer vers : version) {
-            result += label + "." + vers + ",";
+            result.append(label).append(".").append(vers).append(",");
         }
-        result = result.substring(0,result.length()-1) + ")";
-        return result;
+        result = new StringBuilder(result.substring(0, result.length() - 1) + ")");
+        return result.toString();
     }
 
     public Type getType() {
