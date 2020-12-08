@@ -16,6 +16,67 @@ public class GraphInfo {
 
     private final GraphCollections collections = new GraphCollections();
 
+    public List<Node> getGraphNodes() {
+        return graphNodes;
+    }
+
+    public Flags getFlags() {
+        return flags;
+    }
+
+    public GraphCollections getCollections() {
+        return collections;
+    }
+
+    public void setCurrentVersions(Map<String, Set<Integer>> currentVersions) {
+        this.currentVersions = currentVersions;
+    }
+
+    public Map<String, Set<Integer>> getCurrentVersions() {
+        return currentVersions;
+    }
+
+    public void setPrevVersions(Map<String, Set<Integer>> prevVersions) {
+        this.prevVersions = prevVersions;
+    }
+
+    public Map<String, Set<Integer>> getPrevVersions() {
+        return prevVersions;
+    }
+
+    public void setPrevNode(Node prevNode) {
+        if (prevNode == null) {
+            this.prevNodes.clear();
+        } else {
+            this.prevNodes.add(prevNode);
+        }
+    }
+
+    public Set<Node> getPrevNode() {
+        return prevNodes;
+    }
+
+    public void graphNodesAdd(Node node) {
+        graphNodes.add(node);
+    }
+
+    public void incrementNodesCounter() {
+        nodesCounter++;
+    }
+
+    public int getNodesCounter() {
+        return nodesCounter;
+    }
+
+    public Versions getVersionsClass() {
+        return versionsClass;
+    }
+
+    public void setDeclaratorFlag() {
+        flags.setDeclarator(true);
+        prevVersions = new HashMap<>(currentVersions);
+    }
+
     public void addBreaks(final Node node) {
         Breakable breakableNode;
         if (flags.isSwitchEndFlag()) {
@@ -101,7 +162,6 @@ public class GraphInfo {
     }
 
     public Variable getVersion(final String variable) {
-        boolean isAddedToPhiCollection = false;
         Map<String,Set<Integer>> versionCollection;
         if (prevVersions != null) {
             versionCollection = prevVersions;
@@ -111,7 +171,22 @@ public class GraphInfo {
 
         Variable var = versionsClass.getVersion(versionCollection, variable);
 
+        Variable tmpVar;
+        if ((tmpVar = tryToAddVarToPhiCollection(var)) != null) {
+            var = tmpVar;
+        } else {
+            if (var.getVersion().size() > 1) {
+                var = addPhiNode(var);
+            }
+        }
+
+        return var;
+    }
+
+    private Variable tryToAddVarToPhiCollection(Variable var) {
+        // if program is in loop now
         if (collections.getIterationNodesSize() > 0 && flags.isIterationFlag()) {
+            // get actual iteration node to add phi
             IterationNode iterationNode;
             if (flags.isIterationEndFlag()) {
                 Iterator<IterationNode> iter = collections.getIterationNodesIterator();
@@ -120,8 +195,10 @@ public class GraphInfo {
             } else {
                 iterationNode = collections.getLastIterationNode();
             }
+            // get before loop versions
             Set<Integer> varGlobalVersions =
-                    iterationNode.getGlobalVersions().get(variable);
+                    iterationNode.getGlobalVersions().get(var.getLabel());
+            // if this var depends on before loop versions add to phi collection
             if (varGlobalVersions != null
                     && !Collections.disjoint(varGlobalVersions,var.getVersion())) {
                 for (Integer version : varGlobalVersions) {
@@ -130,37 +207,15 @@ public class GraphInfo {
                     }
                 }
                 if (var.getVersion().size() > 0 ) {
-                    List<Variable> phiNode = new ArrayList<>();
-                    Variable phiVar = getDeclaratorVersion(var.getLabel());
-                    phiNode.add(phiVar);
-                    phiNode.add(new Variable("=", Variable.Type.OPERATOR));
-                    phiNode.add(var);
-                    addNode(Node.State.BASIC,phiNode,null);
                     iterationNode.addToPhiCollection(var);
-                    var = phiVar;
+                    var = addPhiNode(var);
                 } else {
                     iterationNode.addToPhiCollection(var);
                 }
-                isAddedToPhiCollection = true;
+                return var;
             }
         }
-
-        if (var.getVersion().size() > 1 && !isAddedToPhiCollection) {
-            List<Variable> phiNode = new ArrayList<>();
-            Variable phiVar = getDeclaratorVersion(var.getLabel());
-            phiNode.add(phiVar);
-            phiNode.add(new Variable("=", Variable.Type.OPERATOR));
-            phiNode.add(var);
-            addNode(Node.State.BASIC,phiNode,null);
-            var = phiVar;
-        }
-
-        return var;
-    }
-
-    public void setDeclaratorFlag() {
-        flags.setDeclarator(true);
-        prevVersions = new HashMap<>(currentVersions);
+        return null;
     }
 
     public Set<Node> getPrevNodes() {
@@ -186,62 +241,6 @@ public class GraphInfo {
         return nodes;
     }
 
-    public List<Node> getGraphNodes() {
-        return graphNodes;
-    }
-
-    public Flags getFlags() {
-        return flags;
-    }
-
-    public GraphCollections getCollections() {
-        return collections;
-    }
-
-    public void setCurrentVersions(Map<String, Set<Integer>> currentVersions) {
-        this.currentVersions = currentVersions;
-    }
-
-    public Map<String, Set<Integer>> getCurrentVersions() {
-        return currentVersions;
-    }
-
-    public void setPrevVersions(Map<String, Set<Integer>> prevVersions) {
-        this.prevVersions = prevVersions;
-    }
-
-    public Map<String, Set<Integer>> getPrevVersions() {
-        return prevVersions;
-    }
-
-    public void setPrevNode(Node prevNode) {
-        if (prevNode == null) {
-            this.prevNodes.clear();
-        } else {
-            this.prevNodes.add(prevNode);
-        }
-    }
-
-    public Set<Node> getPrevNode() {
-        return prevNodes;
-    }
-
-    public void graphNodesAdd(Node node) {
-        graphNodes.add(node);
-    }
-
-    public void incrementNodesCounter() {
-        nodesCounter++;
-    }
-
-    public int getNodesCounter() {
-        return nodesCounter;
-    }
-
-    public Versions getVersionsClass() {
-        return versionsClass;
-    }
-
     public void addBoxNodeBeforeNode(Node nextNode,Node nodeToAdd, Set<Node> prevNodes) {
         for (Node parent : prevNodes) {
             parent.replaceChild(nextNode,nodeToAdd);
@@ -263,17 +262,33 @@ public class GraphInfo {
 
     }
 
+    private Variable addPhiNode(Variable var) {
+        // add phi resolver as next node
+        List<Variable> phiNodeVars = formPhiResolveVar(var);
+        addNode(Node.State.BASIC,phiNodeVars,null);
+        return phiNodeVars.get(0);
+    }
+
+    private List<Variable> formPhiResolveVar(Variable var) {
+        List<Variable> phiNodeVars = new ArrayList<>();
+        Variable phiVar = getDeclaratorVersion(var.getLabel());
+        phiNodeVars.add(phiVar);
+        phiNodeVars.add(new Variable("=", Variable.Type.OPERATOR));
+        phiNodeVars.add(var);
+        return phiNodeVars;
+    }
+
     public Node addPhiResolveNode(final String var,
                                   final Node prevNode,
                                   final Set<Node> beforeLoopNodes) {
-        List<Variable> variables = new ArrayList<>();
+        // add phi resolver as node before prevNode
         Variable phiVar = versionsClass.getVersion(currentVersions,var);
-        variables.add(getDeclaratorVersion(var));
-        variables.add(new Variable("=", Variable.Type.OPERATOR));
-        variables.add(phiVar);
+        List<Variable> variables = formPhiResolveVar(phiVar);
         Node node = new Node(nodesCounter, Node.State.BASIC,variables);
         incrementNodesCounter();
         addBoxNodeBeforeNode(prevNode,node,beforeLoopNodes);
+
+        // add to outer loop's phiCollection phi resolvers from inner loop
         if (collections.getIterationNodesSize() > 1) {
             Iterator<IterationNode> iter = collections.getIterationNodesIterator();
             iter.next();

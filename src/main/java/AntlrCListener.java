@@ -276,41 +276,32 @@ public class AntlrCListener extends CBaseListener {
 
     public void exitIterationStatement(CParser.IterationStatementContext ctx) {
         Set<Node> prev = graphInfo.getPrevNodes();
-        Node continueNode;
+        Node node;
+        IterationNode currentLoop = graphInfo.getCollections().getLastIterationNode();
 
-        graphInfo.setCurrentVersions(graphInfo.getCollections()
-                        .getLastIterationNode().getGlobalVersions());
-        graphInfo.getCollections().getLastIterationNode()
-                .resolvePhiCollection(graphInfo);
+        //switch to global versions
+        graphInfo.setCurrentVersions(currentLoop.getGlobalVersions());
+        currentLoop.resolvePhiCollection(graphInfo);
         graphInfo.mergePhiCollections();
 
-        final Node selectionNode = graphInfo.getCollections()
-                        .getLastIterationNode().getConditionalNode();
-        final Node iterNode = graphInfo.getCollections()
-                .getLastIterationNode().getIterationNode();
+        final Node selectionNode = currentLoop.getConditionalNode();
+        final Node iterationNode = currentLoop.getIterationNode();
 
+        //add counter node in for loop
         if (ctx.forCondition() != null
-                && graphInfo.getCollections()
-                .getLastIterationNode()
-                .getIterationCounter() != null) {
-            Node counterNode =
-                    graphInfo.getCollections()
-                            .getLastIterationNode()
-                            .getIterationCounter();
-            continueNode = counterNode;
+                && currentLoop.getIterationCounter() != null) {
+            Node counterNode = currentLoop.getIterationCounter();
+            node = counterNode;
             graphInfo.addLinkToPrevNode(counterNode);
             graphInfo.setPrevNode(counterNode);
         } else {
-            continueNode = iterNode;
+            node = iterationNode;
         }
 
-        IterationNode iter = graphInfo.getCollections().getLastIterationNode();
-        prev.addAll(iter.getContinues());
-        for (Node node : prev) {
-                graphInfo.addLink(node, continueNode);
+        prev.addAll(currentLoop.getContinues());
+        for (Node prevNode : prev) {
+                graphInfo.addLink(prevNode, node);
         }
-        final Node iterationNode =
-                graphInfo.getCollections().getLastIterationNode().getIterationNode();
         graphInfo.addLinkToPrevNode(iterationNode);
         graphInfo.setPrevNode(selectionNode);
         graphInfo.getFlags().setIterationEndFlag(true);
@@ -352,11 +343,12 @@ public class AntlrCListener extends CBaseListener {
     }
 
     public void exitForIteratorExpression(CParser.ForIteratorExpressionContext ctx) {
+        IterationNode currentLoop = graphInfo.getCollections().getLastIterationNode();
         final Node directNode = new Node(graphInfo.getNodesCounter(), Node.State.BASIC,
                 currentExpression);
         graphInfo.graphNodesAdd(directNode);
         graphInfo.incrementNodesCounter();
-        graphInfo.getCollections().getLastIterationNode().setIterationCounter(directNode);
+        currentLoop.setIterationCounter(directNode);
 
         graphInfo.getFlags().setIterationCounterFlag(false);
 
@@ -370,16 +362,14 @@ public class AntlrCListener extends CBaseListener {
         Node node = new Node(graphInfo.getNodesCounter(), Node.State.BASIC,variables);
         graphInfo.incrementNodesCounter();
         graphInfo.addBoxNodeBeforeNode(
-                graphInfo.getCollections().getLastIterationNode().getIterationNode(),
+                currentLoop.getIterationNode(),
                 node,
-                graphInfo.getCollections().getLastIterationNode().getBeforeLoopNodes());
-        graphInfo.getCollections().getLastIterationNode().setIterationNode(node);
+                currentLoop.getBeforeLoopNodes());
+        currentLoop.setIterationNode(node);
 
-        graphInfo.getCollections().getLastIterationNode()
-                .getGlobalVersions().putAll(graphInfo.getCurrentVersions());
+        currentLoop.getGlobalVersions().putAll(graphInfo.getCurrentVersions());
 
-        for (Variable variable : graphInfo.getCollections()
-                .getLastIterationNode().getPhiCollection()) {
+        for (Variable variable : currentLoop.getPhiCollection()) {
             variable.getVersion().clear();
         }
 
@@ -417,22 +407,19 @@ public class AntlrCListener extends CBaseListener {
                             "Operator \"continue\" outside loop.");
                 }
                 graphInfo.getPrevNodes();
-                graphInfo.getCollections()
-                        .getLastIterationNode()
-                        .addContinues(graphInfo.getPrevNode());
+                IterationNode currentLoop = graphInfo.getCollections().getLastIterationNode();
+                currentLoop.addContinues(graphInfo.getPrevNode());
                 graphInfo.setPrevNode(null);
-                graphInfo.getCollections()
-                        .getLastIterationNode()
-                        .addContinueVersions(graphInfo.getCurrentVersions());
+                currentLoop.addContinueVersions(graphInfo.getCurrentVersions());
                 break;
             case "break":
                 prev = graphInfo.getPrevNodes();
-                graphInfo.getCollections()
-                        .getLastBreakableNode()
-                        .addBreak(prev,graphInfo.getCurrentVersions());
-                graphInfo.getCollections()
-                        .getLastBreakableNode()
-                        .addBreak(graphInfo.getPrevNode(),graphInfo.getCurrentVersions());
+                Breakable currentBreakableNode = graphInfo.getCollections()
+                        .getLastBreakableNode();
+                currentBreakableNode.addBreak(prev,graphInfo.getCurrentVersions());
+                currentBreakableNode.addBreak(
+                        graphInfo.getPrevNode(),
+                        graphInfo.getCurrentVersions());
                 graphInfo.setPrevNode(null);
                 break;
             case "goto":
